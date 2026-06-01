@@ -1,138 +1,218 @@
-## Token Contrast for Weakly-Supervised Semantic Segmentation
+# SASA: Semantic Anchors and Spatial Arbitration
 
-Code of CVPR 2023 paper: Token Contrast for Weakly-Supervised Semantic Segmentation.
+Official implementation of the ICME 2026 paper:
 
-[[arXiv]](https://arxiv.org/abs/2303.01267) [[Poster]](https://rulixiang.github.io/assets/files/CVPR2023_TOCO_poster.pdf)
+**Weakly Supervised Incremental Segmentation via Semantic Anchors and Spatial Arbitration**
 
-<div align="center">
+Zhonggai Wang, Kai Fang, and Guangyu Gao  
+Beijing Institute of Technology
 
-<br>
-  <img width="100%" alt="AFA flowchart" src="./docs/imgs/toco.png">
-</div>
+[![Paper](https://img.shields.io/badge/Paper-ICME%202026-blue)](#citation)
+[![Task](https://img.shields.io/badge/Task-WILSS-green)](#overview)
+[![Code](https://img.shields.io/badge/Code-PyTorch-red)](#getting-started)
 
-<!-- ## Abastract -->
+## Overview
 
-We proposed Token Contrast to address the over-smoothing issue and further leverage the virtue of ViT for the Weakly-Supervised Semantic Segmentation task.
+SASA is a drift-resilient framework for **Weakly Supervised Incremental Semantic Segmentation (WILSS)**. WILSS incrementally learns new semantic classes from image-level labels while preserving previously learned classes. The main challenge is that CAM-based pseudo labels and old-model predictions can inject contradictory supervision, which gradually causes feature drift and class overwriting.
 
-## Data Preparations
-<details>
-<summary>
-VOC dataset
-</summary>
+SASA addresses this problem at two levels:
 
-#### 1. Download
+- **Drift-Resilient Semantic Anchors (DSA):** learnable class-level anchors provide stable semantic references, while Elastic Residual Tokens (ERTs) capture instance-specific variations without corrupting class identity.
+- **Spatial Label Arbitration (SLA):** geometry-aware object masks enforce a "One Object, One Class" constraint and denoise conflicting pseudo labels before they supervise the model.
 
-``` bash
-wget http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar
-tar –xvf VOCtrainval_11-May-2012.tar
-```
-#### 2. Download the augmented annotations
-The augmented annotations are from [SBD dataset](http://home.bharathh.info/pubs/codes/SBD/download.html). Here is a download link of the augmented annotations at
-[DropBox](https://www.dropbox.com/s/oeu149j8qtbs1x0/SegmentationClassAug.zip?dl=0). After downloading ` SegmentationClassAug.zip `, you should unzip it and move it to `VOCdevkit/VOC2012`. The directory sctructure should thus be 
+Together, DSA and SLA stabilize representations and improve pseudo-label reliability under weak incremental supervision.
 
-``` bash
-VOCdevkit/
-└── VOC2012
-    ├── Annotations
-    ├── ImageSets
-    ├── JPEGImages
-    ├── SegmentationClass
-    ├── SegmentationClassAug
-    └── SegmentationObject
-```
-</details>
+## Highlights
 
-<details>
-
-<summary>
-COCO dataset
-</summary>
-
-#### 1. Download
-``` bash
-wget http://images.cocodataset.org/zips/train2014.zip
-wget http://images.cocodataset.org/zips/val2014.zip
-```
-#### 2. Generating VOC style segmentation labels for COCO
-To generate VOC style segmentation labels for COCO dataset, you could use the scripts provided at this [repo](https://github.com/alicranck/coco2voc). Or, just download the generated masks from [Google Drive](https://drive.google.com/file/d/147kbmwiXUnd2dW9_j8L5L0qwFYHUcP9I/view?usp=share_link).
-
-I recommend to organize the images and labels in `coco2014` and `SegmentationClass`, respectively.
-
-``` bash
-MSCOCO/
-├── coco2014
-│    ├── train2014
-│    └── val2014
-└── SegmentationClass
-     ├── train2014
-     └── val2014
-```
-
-
-
-</details>
-
-## Create environment
-I used docker to build the enviroment.
-``` bash 
-## build docker
-docker bulid -t toco --network=host -< Dockerfile
-
-## activate docker
-docker run -it --gpus all --network=host --ipc=host -v $CODE_PATH:/workspace/TOCO -v /$VOC_PATH:/workspace/VOCdevkit -v $COCO_ANNO_PATH:/workspace/MSCOCO -v $COCO_IMG_PATH:/workspace/coco2014 toco:latest /bin/bash
-```
-
-### Clone this repo
-
-```bash
-git clone https://github.com/rulixiang/toco.git
-cd toco
-```
-
-### Build Reg Loss
-
-To use the regularized loss, download and compile the python extension, see [Here](https://github.com/meng-tang/rloss/tree/master/pytorch#build-python-extension-module).
-### Train
-To start training, just run:
-```bash
-## for VOC
-CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 --master_port=29501 scripts/dist_train_voc_seg_neg.py --work_dir work_dir_voc
-## for COCO
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 --master_port=29501 scripts/dist_train_coco_seg_neg.py --work_dir work_dir_coco
-```
-### Evalution
-To evaluation:
-```bash
-## for VOC
-python tools/infer_seg_voc.py --model_path $model_path --backbone vit_base_patch16_224 --infer val
-## for COCO
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 --master_port=29501 tools/infer_seg_voc.py --model_path $model_path --backbone vit_base_patch16_224 --infer val
-```
-<!-- You should get the training logs by running the above commands. Also, check our training log under `logs/`. -->
+- Stabilizes class identity with rigid learnable semantic anchors.
+- Uses elastic residual adaptation for controlled instance-level refinement.
+- Filters noisy pseudo labels through geometry-aware spatial arbitration.
+- Achieves strong results on Pascal VOC and COCO-to-VOC incremental segmentation benchmarks.
 
 ## Results
-Here we report the performance on VOC and COCO dataset. `MS+CRF` denotes multi-scale test and CRF processing.
 
-|Dataset|Backbone|*val*|Log|Weights|*val* (with MS+CRF)|*test* (with MS+CRF)|
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-|VOC|DeiT-B|68.1|[log](./logs/toco_deit-b_voc_20k.log)|[weights](https://drive.google.com/drive/folders/18Ya0w-CwSFKgzS7gTecpqMn0qgfdf1tu?usp=share_link)|69.8|70.5|
-|VOC|ViT-B|69.2|[log](./logs/toco_vit-b_voc_20k.log)|[weights](https://drive.google.com/drive/folders/18Ya0w-CwSFKgzS7gTecpqMn0qgfdf1tu?usp=share_link)|71.1|72.2|
-|COCO|DeiT-B|--|[log](./logs/toco_deit-b_coco_80k.log)|[weights](https://drive.google.com/drive/folders/18Ya0w-CwSFKgzS7gTecpqMn0qgfdf1tu?usp=share_link)|41.3|--|
-|COCO|ViT-B|--|[log](./logs/toco_vit-b_coco_80k.log)|[weights](https://drive.google.com/drive/folders/18Ya0w-CwSFKgzS7gTecpqMn0qgfdf1tu?usp=share_link)|42.2|--|
+Main overlap-setting results reported in the paper. `P` denotes pixel-level supervision and `I` denotes image-level supervision.
 
+| Method | Sup. | 10-10 VOC All | 15-5 VOC All | COCO-to-VOC All | 10-2 VOC All | 10-5 VOC All |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| WILSON (ViT) | I | 68.8 | 69.1 | 41.8 | 46.2 | 66.9 |
+| ToCo (ViT) | I | 67.4 | 67.9 | 41.1 | 43.4 | 65.7 |
+| **SASA (ViT)** | **I** | **74.3** | **73.0** | **47.5** | **51.5** | **71.7** |
+| Joint (ViT) | P | 78.2 | 78.2 | 50.3 | 78.2 | 78.2 |
+
+Disjoint-setting results from the supplementary material:
+
+| Method | Sup. | 10-10 VOC All | 15-5 VOC All |
+| --- | --- | ---: | ---: |
+| WILSON (ViT) | I | 64.5 | 68.2 |
+| ToCo (ViT) | I | 63.2 | 67.4 |
+| **SASA (ViT)** | **I** | **67.3** | **71.9** |
+| Joint (ViT) | P | 78.2 | 78.2 |
+
+## Getting Started
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/ZhonggaiWang/SASA.git
+cd SASA
+```
+
+### 2. Create the environment
+
+The code is implemented in PyTorch. A typical environment contains:
+
+```bash
+conda create -n sasa python=3.9 -y
+conda activate sasa
+
+pip install torch torchvision torchaudio
+pip install numpy scipy scikit-learn pillow imageio opencv-python tqdm matplotlib texttable joblib timm
+```
+
+Optional CRF post-processing requires `pydensecrf`.
+
+### 3. Prepare datasets
+
+#### Pascal VOC 2012
+
+Download Pascal VOC 2012 and the augmented SBD annotations. The expected structure is:
+
+```text
+VOCdevkit/
+`-- VOC2012/
+    |-- Annotations/
+    |-- ImageSets/
+    |-- JPEGImages/
+    |-- SegmentationClass/
+    |-- SegmentationClassAug/
+    `-- SegmentationObject/
+```
+
+The repository already includes incremental split files under:
+
+```text
+datasets/voc/incremental_split/
+```
+
+#### MS COCO
+
+For COCO experiments, prepare COCO 2014 images and VOC-style segmentation masks:
+
+```text
+MSCOCO/
+|-- coco2014/
+|   |-- train2014/
+|   `-- val2014/
+`-- SegmentationClass/
+    |-- train2014/
+    `-- val2014/
+```
+
+### 4. Prepare geometry priors for SLA
+
+SLA uses object masks and geometry cues. The current code expects `.npy` files for:
+
+- SAM/object masks
+- depth maps
+- normal maps
+
+Before training, update the dataset paths in `datasets/voc.py` and the refinement paths in `process_sam.py` to match your local machine.
+
+To refine raw SAM masks with depth and normal cues:
+
+```bash
+python process_sam.py
+```
+
+## Training
+
+Training scripts for common Pascal VOC settings are provided:
+
+```bash
+bash sem_20-0.sh
+bash sem_10-10.sh
+bash sem_15-5.sh
+bash sem_10-5.sh
+bash sem_10-2.sh
+```
+
+You can also launch a specific step manually:
+
+```bash
+python -m torch.distributed.launch \
+  --nproc_per_node=1 \
+  --master_port=29106 \
+  scripts/dist_train_voc_seg_neg.py \
+  --step 0 \
+  --task 10-5 \
+  --max_iters 20000 \
+  --lr 6e-5 \
+  --work_dir output_voc
+```
+
+For incremental steps:
+
+```bash
+python -m torch.distributed.launch \
+  --nproc_per_node=1 \
+  --master_port=29106 \
+  scripts/dist_train_voc_seg_neg.py \
+  --step 1 \
+  --task 10-5 \
+  --max_iters 8000 \
+  --lr 2e-5 \
+  --work_dir output_voc
+```
+
+## Evaluation
+
+Evaluate a trained Pascal VOC checkpoint:
+
+```bash
+python tools/infer_seg_voc.py \
+  --model_path path/to/checkpoint.pth \
+  --backbone vit_base_patch16_224 \
+  --infer_set val
+```
+
+For COCO:
+
+```bash
+python -m torch.distributed.launch \
+  --nproc_per_node=4 \
+  --master_port=29501 \
+  tools/infer_seg_coco_ddp.py \
+  --model_path path/to/checkpoint.pth
+```
+
+## Repository Structure
+
+```text
+SASA/
+|-- continual/          # Incremental training logic
+|-- datasets/           # VOC/COCO datasets and incremental splits
+|-- model/              # Backbone, decoder, losses, and SASA modules
+|-- scripts/            # Distributed training entry points
+|-- tools/              # Inference and evaluation utilities
+|-- utils/              # Optimization, CAM, CRF, and metric utilities
+|-- process_sam.py      # Geometry-aware SAM mask refinement
+`-- sem_*.sh            # VOC incremental training scripts
+```
 
 ## Citation
-Please kindly cite our paper if you find it's helpful in your work.
 
-``` bibtex
-@inproceedings{ru2023token,
-    title = {Token Contrast for Weakly-Supervised Semantic Segmentation},
-    author = {Lixiang Ru and Heliang Zheng and Yibing Zhan and Bo Du}
-    booktitle = {CVPR},
-    year = {2023},
-  }
+If this project is useful for your research, please cite:
+
+```bibtex
+@inproceedings{wang2026sasa,
+  title     = {Weakly Supervised Incremental Segmentation via Semantic Anchors and Spatial Arbitration},
+  author    = {Wang, Zhonggai and Fang, Kai and Gao, Guangyu},
+  booktitle = {IEEE International Conference on Multimedia and Expo (ICME)},
+  year      = {2026}
+}
 ```
 
 ## Acknowledgement
 
-We mainly use [ViT-B](https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/vit.py) and [DeiT-B](https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/deit.py) as the backbone, which are based on [timm](https://github.com/huggingface/pytorch-image-models). Also, we use the [Regularized Loss](https://github.com/meng-tang/rloss). Many thanks to their brilliant works!
+This codebase builds on common weakly supervised semantic segmentation and incremental segmentation tooling, including ViT/DeiT backbones from `timm`, CAM-based pseudo-label generation, and CRF refinement. We thank the authors of these open-source projects and related WILSS methods.
